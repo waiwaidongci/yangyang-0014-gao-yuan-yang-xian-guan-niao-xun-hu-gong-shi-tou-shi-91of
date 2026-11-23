@@ -1,5 +1,5 @@
 import {api,h} from '/base.js';
-import {recordDesk,related,selectField} from '/patrol.js';
+import {recordDesk,related,selectField,ref} from '/patrol.js';
 import {weatherPanel} from '/weather/panel.js';
 import {comparisonPanel} from '/agreement/panel.js';
 import {editionPanel} from '/editions/panel.js';
@@ -21,11 +21,38 @@ export async function renderField(page,outlet,user,flash=''){
   ${selected?selectField('pick_walk','巡护班',Object.fromEntries(visits.map(row=>[row.id,related(row)])),selected.id):''}</header>
   <p class="field-message" role="status">${h(flash)}</p>${panel}</div>`;
   const banner=outlet.querySelector('.field-message');
-  const fail=error=>{banner.textContent=error.message;banner.dataset.type='error';};
+  const fail=error=>{
+    banner.textContent=error.message;banner.dataset.type='error';
+    const guard=outlet.querySelector('#pivot-guard');
+    if(guard&&error.detail&&typeof error.detail==='object'){
+      const blocked=[...(error.detail.pending_walks??[]),...(error.detail.stale_walks??[])];
+      guard.className='pivot-guard is-blocking';
+      guard.innerHTML=blocked.map(item=>
+        `<span>${ref(item.walk_id)} · ${h(item.route_code)} · ${h(item.crew)} — ${h(item.change)}</span>`).join('');
+    }
+  };
   outlet.querySelector('[name=pick_walk]')?.addEventListener('change',event=>{
     recordDesk.patrolId=Number(event.target.value);
     renderField(page,outlet,user).catch(fail);
   });
+  const pivotForm=outlet.querySelector('form[data-station-path="/api/editions"]');
+  const renderPivotGuard=(report)=>{
+    const guard=outlet.querySelector('#pivot-guard');
+    if(!guard)return;
+    const blocked=[...(report?.pending_walks??[]),...(report?.stale_walks??[])];
+    if(!blocked.length){
+      guard.className='pivot-guard';guard.innerHTML='';return;
+    }
+    guard.className='pivot-guard is-blocking';
+    guard.innerHTML='<strong>该旧透视需重编，以下班次未反映在冻结结果中：</strong>'+
+      blocked.map(item=>`<span>${ref(item.walk_id)} · ${h(item.route_code)} · ${h(item.crew)} — ${h(item.change)}</span>`).join('');
+  };
+  if(pivotForm){
+    const readiness=JSON.parse(pivotForm.dataset.readiness||'{}');
+    const pivotSelect=pivotForm.querySelector('[name=snapshot_id]');
+    const sync=()=>renderPivotGuard(readiness[pivotSelect.value]);
+    pivotSelect?.addEventListener('change',sync);sync();
+  }
   for(const form of outlet.querySelectorAll('form[data-station-path]')) form.onsubmit=async event=>{
     event.preventDefault();
     const formValues=new FormData(form);

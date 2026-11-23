@@ -8,4 +8,14 @@
 .edition-record li{border-top:1px dashed var(--s-line);padding:.45rem 0;display:flex;justify-content:space-between;align-items:center}
 .edition-record li form{margin:0}
 .edition-grid fieldset{border:1px solid var(--s-line)}
+.readiness-list{list-style:none;padding:0;margin:.5rem 0 0;display:grid;gap:.5rem}
+.readiness-list li{border:1px solid var(--s-line);padding:.55rem .65rem;display:grid;gap:.25rem}
+.readiness-list li span{font-size:.85rem;color:var(--s-muted)}
+.readiness-list li.is-ready{border-color:var(--s-accent)}
+.readiness-list li.is-stale{border-color:#b4541a;background:#fdf3ec}
+.stale-list{list-style:none;padding:.4rem 0 0;margin:0;display:grid;gap:.25rem;font-size:.85rem}
+.stale-list li{border:0;border-top:1px dashed var(--s-line);padding:.3rem 0;color:#8a3f12}
+.pivot-guard{display:grid;gap:.3rem;margin:.4rem 0;font-size:.85rem}
+.pivot-guard.is-blocking{border:1px solid #b4541a;background:#fdf3ec;color:#8a3f12;padding:.55rem .65rem}
+.pivot-guard span{display:block}
 @media(max-width:760px){.edition-grid{grid-template-columns:1fr}}

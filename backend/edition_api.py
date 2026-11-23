@@ -1,9 +1,12 @@
 """Manage signed station editions, local delivery receipts, and CSV evidence."""
 from fastapi import APIRouter,Depends,HTTPException,Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from core import db,require
 from edition_schema import Audience,EditionInput
 from edition_service import export_matrix,publish,receive,snapshot_for
+from publication_guard import evaluate
 
 router = APIRouter(prefix="/api/editions")
 
@@ -20,10 +23,27 @@ def shelf(user=Depends(require())):
         }
 
 
-@router.post("",status_code=201)
+@router.get("/readiness")
+def readiness(user=Depends(require())):
+    """Report, per frozen pivot, the shifts that force a recompute before signing."""
+    with db() as cx:
+        snapshots = cx.execute(
+            """SELECT * FROM effort_snapshot WHERE status='frozen' ORDER BY id DESC"""
+        ).fetchall()
+        return {"snapshots": [evaluate(cx, item, lock=False) for item in snapshots]}
+
+
+@router.post("")
 def release(data: EditionInput,user=Depends(require("reviewer"))):
     with db() as cx:
-        return publish(cx,data,user["email"])
+        edition, replayed = publish(cx,data,user["email"])
+    # A timeout retry of the exact same edition reuses the existing volume
+    # (HTTP 200) instead of opening a new one; a first signing answers 201.
+    return JSONResponse(
+        jsonable_encoder(edition),
+        status_code=200 if replayed else 201,
+        headers={"X-Idempotent-Replay": "true" if replayed else "false"},
+    )
 
 
 @router.post("/{id}/inbox/{audience}/receive")

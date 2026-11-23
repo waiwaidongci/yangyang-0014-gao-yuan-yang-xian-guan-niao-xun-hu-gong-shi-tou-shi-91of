@@ -4,6 +4,8 @@ from io import StringIO
 
 from fastapi import HTTPException
 
+from publication_guard import ensure_publishable
+
 SCOPE = ("date_from","date_to","row_axis","col_axis","taxon")
 
 
@@ -16,9 +18,20 @@ def snapshot_for(cx,id):
 
 def publish(cx,data,reviewer):
     cx.execute("SELECT pg_advisory_xact_lock(hashtext(%s)::bigint)", (data.series,))
+    # A timed-out retry of the exact same edition returns the row already
+    # committed instead of opening another volume; the older edition stays
+    # downloadable through the shelf and CSV endpoints.
+    existing = cx.execute(
+        "SELECT * FROM station_edition WHERE series=%s AND snapshot_id=%s",
+        (data.series,data.snapshot_id),
+    ).fetchone()
+    if existing:
+        return existing, True
     snapshot = snapshot_for(cx,data.snapshot_id)
-    if not snapshot["result"]["included_walks"] or snapshot["result"]["unreviewed_walks"]:
-        raise HTTPException(409,"发布前需有有效工时并复核统计范围内全部班次")
+    # Live, row-locked comparison: late supplementary booking and reviews that
+    # landed after the freeze are caught before signing. Out-of-scope walks are
+    # never read here and therefore never block.
+    ensure_publishable(cx,snapshot)
     latest = cx.execute(
         "SELECT * FROM station_edition WHERE series=%s ORDER BY volume DESC LIMIT 1",(data.series,)
     ).fetchone()
@@ -42,9 +55,12 @@ def publish(cx,data,reviewer):
             VALUES (%s,%s,%s,%s,%s,%s) RETURNING *""",
         (data.series,volume,data.snapshot_id,data.supersedes,data.reason,reviewer)
     ).fetchone()
+    # The corrected matrix and its station inbox rows are written in the same
+    # transaction; on failure nothing commits and the previous volume remains
+    # the current edition.
     for receiver in sorted(audience):
         cx.execute("INSERT INTO edition_inbox(edition_id,audience) VALUES (%s,%s)",(new["id"],receiver))
-    return new
+    return new, False
 
 
 def receive(cx,edition,audience,operator):

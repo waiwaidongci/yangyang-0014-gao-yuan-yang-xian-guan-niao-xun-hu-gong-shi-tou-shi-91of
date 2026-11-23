@@ -15,8 +15,11 @@ export async function api(path, method = 'GET', body) {
   const type = response.headers.get('Content-Type') ?? ''
   const data = type.includes('application/json') ? await response.json() : await response.text()
   if (!response.ok) {
-    const detail = typeof data.detail === 'string' ? data.detail : (response.status === 422 ? '请检查输入字段或取值范围。' : '请求失败，请重试。')
-    throw Object.assign(new Error(detail), {status: response.status, detail: data.detail})
+    const rawDetail = typeof data.detail === 'string'
+      ? data.detail
+      : (data.detail?.message ?? (response.status === 422 ? '请检查输入字段或取值范围。' : '请求失败，请重试。'))
+    const detail = data.detail && typeof data.detail === 'object' ? data.detail : rawDetail
+    throw Object.assign(new Error(rawDetail), {status: response.status, detail})
   }
   return data
 }
